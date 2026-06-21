@@ -140,7 +140,7 @@ COL_CN = {
 }
 
 def _label_reasons(reasons_str: str) -> str:
-    """给买入原因加策略标签"""
+    """给买入原因加策略标签（与回测5策略一一对应）"""
     if not reasons_str:
         return ''
     parts = reasons_str.split(';')
@@ -149,17 +149,35 @@ def _label_reasons(reasons_str: str) -> str:
         p = p.strip()
         if not p:
             continue
-        if 'MACD' in p: labeled.append(f'[趋势] {p}')
-        elif 'RSI' in p: labeled.append(f'[超卖] {p}')
-        elif 'KDJ' in p: labeled.append(f'[指标] {p}')
-        elif '均线' in p or 'MA' in p: labeled.append(f'[均线] {p}')
-        elif '量' in p or '放量' in p or '缩量' in p: labeled.append(f'[量价] {p}')
-        elif '布林' in p or 'BB' in p: labeled.append(f'[通道] {p}')
-        elif '底背离' in p or '顶背离' in p: labeled.append(f'[背离] {p}')
-        elif 'WR' in p or 'CCI' in p: labeled.append(f'[指标] {p}')
-        elif '影线' in p or '锤子' in p: labeled.append(f'[形态] {p}')
-        elif '跌幅' in p or '涨幅' in p: labeled.append(f'[动量] {p}')
-        else: labeled.append(f'[信号] {p}')
+        # MACD金叉+放量
+        if 'MACD' in p and ('金叉' in p or '底背离' in p or '红柱' in p):
+            labeled.append(f'[MACD金叉+放量] {p}')
+        elif '放量' in p and ('上涨' in p or '确认' in p):
+            labeled.append(f'[MACD金叉+放量] {p}')
+        # 均线系统
+        elif '均线' in p and ('多头' in p or '排列' in p):
+            labeled.append(f'[均线系统] {p}')
+        elif 'MA' in p and ('上穿' in p or '偏离' in p):
+            labeled.append(f'[均线系统] {p}')
+        elif '偏离MA' in p:
+            labeled.append(f'[均线系统] {p}')
+        # 布林带反转
+        elif '布林' in p or 'BB' in p:
+            labeled.append(f'[布林带反转] {p}')
+        elif 'RSI' in p and ('超卖' in p or '≤' in p):
+            labeled.append(f'[布林带反转] {p}')
+        elif 'KDJ' in p and ('J值' in p or '超卖' in p):
+            labeled.append(f'[布林带反转] {p}')
+        elif 'WR' in p and '超卖' in p:
+            labeled.append(f'[布林带反转] {p}')
+        elif 'CCI' in p:
+            labeled.append(f'[布林带反转] {p}')
+        # 突破放量
+        elif '涨幅' in p and '>' in p:
+            labeled.append(f'[突破放量] {p}')
+        # 多因子综合 — 兜底
+        else:
+            labeled.append(f'[多因子综合] {p}')
     return '; '.join(labeled)
 
 
