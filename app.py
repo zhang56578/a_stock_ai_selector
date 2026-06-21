@@ -123,6 +123,45 @@ STOCK_POOL = {
     "301071": {"name": "力量钻石/金刚石", "sector": "人造钻石"},
 }
 
+# 信号中英文映射
+SIGNAL_CN = {
+    'STRONG_BUY': '🟢强烈买入', 'BUY': '🔵买入', 'WEAK_BUY': '⚪偏多',
+    'NEUTRAL': '⬜中性', 'WEAK_SELL': '🟡偏空', 'SELL': '🟠卖出',
+    'STRONG_SELL': '🔴强烈卖出',
+}
+# 列名中英文映射（扫描结果表）
+COL_CN = {
+    'code': '代码', 'name': '名称', 'sector': '板块', 'price': '现价',
+    'change%': '涨跌%', 'signal': '信号', 'buy_score': '买入分',
+    'sell_score': '卖出分', 'rsi': 'RSI',
+    'buy_strategy': '🟢买入策略', 'sell_strategy': '🔴卖出策略',
+    'ret_20d': '20日涨跌', 'ret_60d': '60日涨跌',
+    'macd_cross_wr': 'MACD金叉胜率', 'buy_reasons': '买入原因',
+}
+
+def _label_reasons(reasons_str: str) -> str:
+    """给买入原因加策略标签"""
+    if not reasons_str:
+        return ''
+    parts = reasons_str.split(';')
+    labeled = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if 'MACD' in p: labeled.append(f'[趋势] {p}')
+        elif 'RSI' in p: labeled.append(f'[超卖] {p}')
+        elif 'KDJ' in p: labeled.append(f'[指标] {p}')
+        elif '均线' in p or 'MA' in p: labeled.append(f'[均线] {p}')
+        elif '量' in p or '放量' in p or '缩量' in p: labeled.append(f'[量价] {p}')
+        elif '布林' in p or 'BB' in p: labeled.append(f'[通道] {p}')
+        elif '底背离' in p or '顶背离' in p: labeled.append(f'[背离] {p}')
+        elif 'WR' in p or 'CCI' in p: labeled.append(f'[指标] {p}')
+        elif '影线' in p or '锤子' in p: labeled.append(f'[形态] {p}')
+        elif '跌幅' in p or '涨幅' in p: labeled.append(f'[动量] {p}')
+        else: labeled.append(f'[信号] {p}')
+    return '; '.join(labeled)
+
 
 # ==================== K线可视化 ====================
 def plot_kline(df: pd.DataFrame, title: str = ""):
@@ -606,6 +645,14 @@ def main():
                               'buy_reasons']
                 avail = [c for c in show_cols if c in display_df.columns]
 
+                # 翻译信号和列名
+                display_renamed = display_df[avail].copy()
+                if 'signal' in display_renamed.columns:
+                    display_renamed['signal'] = display_renamed['signal'].map(SIGNAL_CN).fillna(display_renamed['signal'])
+                if 'buy_reasons' in display_renamed.columns:
+                    display_renamed['buy_reasons'] = display_renamed['buy_reasons'].apply(_label_reasons)
+                display_renamed.rename(columns=COL_CN, inplace=True)
+
                 def color_signal(val):
                     colors = {
                         'STRONG_BUY': 'background-color: #ff4d4d; color: white',
@@ -614,6 +661,13 @@ def main():
                         'NEUTRAL': '', 'WEAK_SELL': 'background-color: #ccffcc',
                         'SELL': 'background-color: #80ff80',
                         'STRONG_SELL': 'background-color: #00cc00; color: white',
+                        # 中文版
+                        '🟢强烈买入': 'background-color: #ff4d4d; color: white',
+                        '🔵买入': 'background-color: #ff8080; color: white',
+                        '⚪偏多': 'background-color: #ffcccc',
+                        '⬜中性': '', '🟡偏空': 'background-color: #ccffcc',
+                        '🟠卖出': 'background-color: #80ff80',
+                        '🔴强烈卖出': 'background-color: #00cc00; color: white',
                     }
                     return colors.get(val, '')
 
@@ -628,16 +682,16 @@ def main():
                     return ''
 
                 try:
-                    styled = display_df[avail].style.applymap(color_signal, subset=['signal']).applymap(
-                        color_score_grad, subset=['buy_score']).format({
-                        'price': '{:.2f}', 'change%': '{:+.2f}%', 'rsi': '{:.1f}',
-                        'ret_20d': '{:+.1f}%', 'ret_60d': '{:+.1f}%',
-                        'macd_cross_wr': '{:.1f}%',
+                    styled = display_renamed.style.applymap(color_signal, subset=[COL_CN['signal']]).applymap(
+                        color_score_grad, subset=[COL_CN['buy_score']]).format({
+                        COL_CN['price']: '{:.2f}', COL_CN['change%']: '{:+.2f}%', COL_CN['rsi']: '{:.1f}',
+                        COL_CN['ret_20d']: '{:+.1f}%', COL_CN['ret_60d']: '{:+.1f}%',
+                        COL_CN['macd_cross_wr']: '{:.1f}%',
                     })
                     st.dataframe(styled, use_container_width=True, height=500)
                 except Exception:
                     st.warning("⚠️ 渲染表格出错，尝试纯文本显示")
-                    st.dataframe(display_df[avail], use_container_width=True, height=500)
+                    st.dataframe(display_renamed, use_container_width=True, height=500)
 
                 csv_out = display_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
@@ -1403,6 +1457,14 @@ def my_strategy(df, idx, params):
 
             available_cols = [c for c in show_cols if c in display_df.columns]
 
+            # 翻译信号和列名
+            display_renamed = display_df[available_cols].copy()
+            if 'signal' in display_renamed.columns:
+                display_renamed['signal'] = display_renamed['signal'].map(SIGNAL_CN).fillna(display_renamed['signal'])
+            if 'buy_reasons' in display_renamed.columns:
+                display_renamed['buy_reasons'] = display_renamed['buy_reasons'].apply(_label_reasons)
+            display_renamed.rename(columns=COL_CN, inplace=True)
+
             # Color coding for signal
             def color_signal2(val):
                 colors = {
@@ -1413,6 +1475,12 @@ def my_strategy(df, idx, params):
                     'WEAK_SELL': 'background-color: #ccffcc',
                     'SELL': 'background-color: #80ff80',
                     'STRONG_SELL': 'background-color: #00cc00; color: white',
+                    '🟢强烈买入': 'background-color: #ff4d4d; color: white',
+                    '🔵买入': 'background-color: #ff8080; color: white',
+                    '⚪偏多': 'background-color: #ffcccc',
+                    '⬜中性': '', '🟡偏空': 'background-color: #ccffcc',
+                    '🟠卖出': 'background-color: #80ff80',
+                    '🔴强烈卖出': 'background-color: #00cc00; color: white',
                 }
                 return colors.get(val, '')
 
@@ -1427,21 +1495,21 @@ def my_strategy(df, idx, params):
                 return ''
 
             try:
-                styled = display_df[available_cols].style.applymap(
-                    color_signal2, subset=['signal']
+                styled = display_renamed.style.applymap(
+                    color_signal2, subset=[COL_CN['signal']]
                 ).applymap(
-                    color_score_grad2, subset=['buy_score']
+                    color_score_grad2, subset=[COL_CN['buy_score']]
                 ).format({
-                    'price': '{:.2f}',
-                    'change%': '{:+.2f}%',
-                    'rsi': '{:.1f}',
-                    'ret_20d': '{:+.1f}%',
-                    'ret_60d': '{:+.1f}%',
-                    'macd_cross_wr': '{:.1f}%',
+                    COL_CN['price']: '{:.2f}',
+                    COL_CN['change%']: '{:+.2f}%',
+                    COL_CN['rsi']: '{:.1f}',
+                    COL_CN['ret_20d']: '{:+.1f}%',
+                    COL_CN['ret_60d']: '{:+.1f}%',
+                    COL_CN['macd_cross_wr']: '{:.1f}%',
                 })
                 st.dataframe(styled, use_container_width=True, height=500)
             except Exception:
-                st.dataframe(display_df[available_cols], use_container_width=True, height=500)
+                st.dataframe(display_renamed, use_container_width=True, height=500)
 
             # Stock detail expander
             with st.expander("📋 查看某只股票详细分析"):
