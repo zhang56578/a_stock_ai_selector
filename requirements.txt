@@ -1,0 +1,18 @@
+streamlit>=1.35.0
+streamlit-autorefresh>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+plotly>=5.22.0
+matplotlib>=3.8.0
+python-docx>=1.1.0
+yfinance>=0.2.40
+stockstats>=0.6.0
+requests>=2.28.0
+
+# 真实A股数据（可选，至少安装一个）
+# mootdx>=1.0.0        # TDX通达信K线（最稳定）
+# akshare>=1.16.0      # 丰富数据接口
+
+# AI增强（可选）
+# openai>=1.0.0        # GPT模型
+# google-generativeai  # Gemini模型
