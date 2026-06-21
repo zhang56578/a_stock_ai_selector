@@ -549,13 +549,16 @@ def main():
                     status_text.text(f"扫描进度: {scanned}/{total} — 已发现 {len(scan_results_raw)} 只有效结果")
 
             scan_df = pd.DataFrame(scan_results_raw) if scan_results_raw else pd.DataFrame()
-            if not scan_df.empty:
+            if not scan_df.empty and 'buy_score' in scan_df.columns:
                 scan_df = scan_df.sort_values('buy_score', ascending=False)
 
             progress_bar.progress(1.0)
             status_text.text(f"扫描完成! 共分析 {len(scan_df)} 只股票")
 
-            if not scan_df.empty:
+            valid_scan = not scan_df.empty and 'buy_score' in scan_df.columns and 'signal' in scan_df.columns
+            if valid_scan:
+                # 保存到 session_state 供龙头看板/资金趋势复用
+                st.session_state['scan_df'] = scan_df
                 from stock_scanner import filter_buy_signals, summarize_by_sector
 
                 buy_df = filter_buy_signals(scan_df, min_buy_score=10)
@@ -1257,7 +1260,7 @@ def my_strategy(df, idx, params):
                     progress_bar.progress(1.0)
                     status_text.text(f"扫描完成! 共分析 {scan_df_len} 只股票")
 
-                    if not scan_df.empty:
+                    if not scan_df.empty and 'buy_score' in scan_df.columns:
                         buy_df = filter_buy_signals(scan_df, min_buy_score=min_buy_score)
                         st.session_state['scan_df'] = scan_df
                         st.session_state['buy_df'] = buy_df
