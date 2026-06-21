@@ -627,13 +627,17 @@ def main():
                     if v >= 10: return 'background-color: #ffcccc'
                     return ''
 
-                styled = display_df[avail].style.applymap(color_signal, subset=['signal']).applymap(
-                    color_score_grad, subset=['buy_score']).format({
-                    'price': '{:.2f}', 'change%': '{:+.2f}%', 'rsi': '{:.1f}',
-                    'ret_20d': '{:+.1f}%', 'ret_60d': '{:+.1f}%',
-                    'macd_cross_wr': '{:.1f}%',
-                })
-                st.dataframe(styled, use_container_width=True, height=500)
+                try:
+                    styled = display_df[avail].style.applymap(color_signal, subset=['signal']).applymap(
+                        color_score_grad, subset=['buy_score']).format({
+                        'price': '{:.2f}', 'change%': '{:+.2f}%', 'rsi': '{:.1f}',
+                        'ret_20d': '{:+.1f}%', 'ret_60d': '{:+.1f}%',
+                        'macd_cross_wr': '{:.1f}%',
+                    })
+                    st.dataframe(styled, use_container_width=True, height=500)
+                except Exception:
+                    st.warning("⚠️ 渲染表格出错，尝试纯文本显示")
+                    st.dataframe(display_df[avail], use_container_width=True, height=500)
 
                 csv_out = display_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
@@ -1361,20 +1365,22 @@ def my_strategy(df, idx, params):
                 if v >= 10: return 'background-color: #ffcccc'
                 return ''
 
-            styled = display_df[available_cols].style.applymap(
-                color_signal2, subset=['signal']
-            ).applymap(
-                color_score_grad2, subset=['buy_score']
-            ).format({
-                'price': '{:.2f}',
-                'change%': '{:+.2f}%',
-                'rsi': '{:.1f}',
-                'ret_20d': '{:+.1f}%',
-                'ret_60d': '{:+.1f}%',
-                'macd_cross_wr': '{:.1f}%',
-            })
-
-            st.dataframe(styled, use_container_width=True, height=500)
+            try:
+                styled = display_df[available_cols].style.applymap(
+                    color_signal2, subset=['signal']
+                ).applymap(
+                    color_score_grad2, subset=['buy_score']
+                ).format({
+                    'price': '{:.2f}',
+                    'change%': '{:+.2f}%',
+                    'rsi': '{:.1f}',
+                    'ret_20d': '{:+.1f}%',
+                    'ret_60d': '{:+.1f}%',
+                    'macd_cross_wr': '{:.1f}%',
+                })
+                st.dataframe(styled, use_container_width=True, height=500)
+            except Exception:
+                st.dataframe(display_df[available_cols], use_container_width=True, height=500)
 
             # Stock detail expander
             with st.expander("📋 查看某只股票详细分析"):
