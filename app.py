@@ -656,6 +656,14 @@ def main():
                     with col_sb1:
                         bt_strat_sb = st.selectbox("策略", list(BUILTIN_STRATEGIES.keys()),
                                                    key="bt_strat_sidebar")
+                        desc_map = {
+                            'MACD金叉+放量': 'MACD金叉且放量买入，适合趋势股',
+                            '均线系统': '均线多头排列时买入，跟随趋势',
+                            '布林带反转': '超跌反弹抄底，适合震荡市',
+                            '多因子综合': '六维信号综合打分，最稳健',
+                            '突破放量': '突破前高追涨，适合强势股',
+                        }
+                        st.caption(desc_map.get(bt_strat_sb, ''))
                     with col_sb2:
                         top_n_sb = st.selectbox("回测前N只", [3, 5, 8, 10, 15],
                                                 index=1, key="bt_topn_sidebar")
@@ -684,13 +692,19 @@ def main():
                             st.success(f"回测完成 {len(bt_sb_results)} 只")
                             bt_tbl = []
                             for r in sorted(bt_sb_results, key=lambda x: x.get('total_return', -999), reverse=True):
+                                trades = r.get('trades_count', 0) or 0
+                                no_sig = (trades == 0)
                                 bt_tbl.append({
                                     '代码': r['code'], '名称': r['name'],
-                                    '收益%': r.get('total_return', 0),
-                                    '胜率%': r.get('win_rate', 0),
-                                    '回撤%': r.get('max_drawdown', 0),
+                                    '收益%': '无信号' if no_sig else f"{r.get('total_return', 0):+.1f}%",
+                                    '胜率%': '无信号' if no_sig else f"{r.get('win_rate', 0):.0f}%",
+                                    '回撤%': '无信号' if no_sig else f"{r.get('max_drawdown', 0):.1f}%",
+                                    '交易': 0 if no_sig else trades,
                                 })
                             st.dataframe(pd.DataFrame(bt_tbl), use_container_width=True, height=250)
+                            nosig_count = sum(1 for r in bt_sb_results if (r.get('trades_count', 0) or 0) == 0)
+                            if nosig_count > 0:
+                                st.caption(f"🟠 {nosig_count} 只股票无信号（该策略在历史数据中未触发买卖条件），可切换策略试试")
                         else:
                             st.warning("回测无有效结果")
 
@@ -1473,7 +1487,7 @@ def my_strategy(df, idx, params):
                         st.session_state.pop(k, None)
                     st.rerun()
 
-            # ==== 🧪 策略回测验证 ====
+                # ==== 🧪 策略回测验证 ====
             st.divider()
             with st.expander("🧪 一键擒龙策略回测验证", expanded=False):
                 st.markdown("对扫描出的推荐股票，选用不同策略进行历史回测，验证信号质量。")
@@ -1481,10 +1495,20 @@ def my_strategy(df, idx, params):
                 from backtest_engine import BUILTIN_STRATEGIES, BacktestEngine, run_backtest
                 from technical_indicators import add_indicators_streamlined
 
+                # 策略白话说明
+                STRATEGY_EXPLAIN = {
+                    'MACD金叉+放量': '📖 当MACD出现金叉（快线上穿慢线）且成交量放大1.5倍时买入，MACD死叉或RSI超买(>75)时卖出。适合趋势明显的股票。',
+                    '均线系统': '📖 当5日均线上穿20日均线且均线呈多头排列时买入，均线死叉或RSI>78时卖出。适合跟随中期趋势。',
+                    '布林带反转': '📖 当股价跌破布林带下轨、RSI超卖(<35)且KDJ超卖时买入，突破上轨时卖出。适合震荡行情抄底逃顶。',
+                    '多因子综合': '📖 综合MACD/KDJ/均线/RSI/WR/成交量六维信号打分，买入分≥5且卖出分≤1时买入，卖出分≥4时卖出。最稳健。',
+                    '突破放量': '📖 当股价突破前期20日最高点且成交量放大2倍以上时追涨买入，MACD死叉或跌破20日均线时卖出。适合强势突破行情。',
+                }
+
                 strat_names = list(BUILTIN_STRATEGIES.keys())
                 col_bt1, col_bt2, col_bt3 = st.columns(3)
                 with col_bt1:
                     bt_strategy = st.selectbox("回测策略", strat_names, index=0, key="bt_strategy_tab7")
+                    st.caption(STRATEGY_EXPLAIN.get(bt_strategy, ''))
                 with col_bt2:
                     top_n = st.slider("回测前N只推荐股", 1, min(20, len(scan_df)), min(8, len(scan_df)), 1, key="bt_topn_tab7")
                 with col_bt3:
@@ -1556,36 +1580,48 @@ def my_strategy(df, idx, params):
                     # Results table
                     bt_display = []
                     for r in bt_results:
+                        trades = r.get('trades_count', 0) or 0
+                        no_signal = (trades == 0 and 'error' not in r)
                         bt_display.append({
                             '代码': r.get('code', ''),
                             '名称': r.get('name', ''),
                             '板块': r.get('sector', ''),
                             'AI评分': r.get('buy_score', ''),
-                            '总收益%': r.get('total_return', '-'),
-                            '年化%': r.get('annual_return', '-'),
-                            '最大回撤%': r.get('max_drawdown', '-'),
-                            '胜率%': r.get('win_rate', '-'),
-                            '夏普': r.get('sharpe_ratio', '-'),
-                            '交易次数': r.get('trades_count', '-'),
+                            '总收益%': '无信号' if no_signal else r.get('total_return', '-'),
+                            '年化%': '无信号' if no_signal else r.get('annual_return', '-'),
+                            '最大回撤%': '无信号' if no_signal else r.get('max_drawdown', '-'),
+                            '胜率%': '无信号' if no_signal else r.get('win_rate', '-'),
+                            '夏普': '无信号' if no_signal else r.get('sharpe_ratio', '-'),
+                            '交易次数': 0 if no_signal else trades,
                             '错误': r.get('error', ''),
                         })
                     bt_df_display = pd.DataFrame(bt_display)
 
                     def color_ret(val):
                         if isinstance(val, str): return ''
-                        return 'background-color: #c8e6c9' if val > 0 else 'background-color: #ffcdd2'
+                        try: v = float(val); return 'background-color: #c8e6c9' if v > 0 else 'background-color: #ffcdd2'
+                        except: return ''
                     def color_wr(val):
                         if isinstance(val, str): return ''
-                        return 'background-color: #c8e6c9' if val > 50 else ''
+                        try: v = float(val); return 'background-color: #c8e6c9' if v > 50 else ''
+                        except: return ''
+                    def color_nosig(val):
+                        return 'background-color: #fff3e0; color: #e65100' if val == '无信号' else ''
 
-                    st.dataframe(
-                        bt_df_display.style.applymap(color_ret, subset=['总收益%', '年化%'])
-                                     .applymap(color_wr, subset=['胜率%'])
-                                     .format({'年化%': '{:+.1f}%', '总收益%': '{:+.1f}%',
-                                              '最大回撤%': '{:.1f}%', '胜率%': '{:.1f}%',
-                                              '夏普': '{:.3f}'}, na_rep='-'),
-                        use_container_width=True, height=400
-                    )
+                    try:
+                        styled_bt = bt_df_display.style \
+                            .applymap(color_ret, subset=['总收益%', '年化%']) \
+                            .applymap(color_wr, subset=['胜率%']) \
+                            .applymap(color_nosig, subset=['总收益%'])
+                        # 只格式化数值列
+                        for col in ['总收益%', '年化%', '最大回撤%', '胜率%', '夏普']:
+                            try:
+                                bt_df_display[col] = pd.to_numeric(bt_df_display[col], errors='coerce')
+                            except:
+                                pass
+                        st.dataframe(styled_bt, use_container_width=True, height=400)
+                    except Exception:
+                        st.dataframe(bt_df_display, use_container_width=True, height=400)
 
                     # Equity curve for best performer
                     if valid:
