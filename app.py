@@ -559,7 +559,6 @@ def main():
             if valid_scan:
                 # 保存到 session_state 供龙头看板/资金趋势复用
                 st.session_state['scan_df'] = scan_df
-                #from stock_scanner import filter_buy_signals, summarize_by_sector
 
                 buy_df = filter_buy_signals(scan_df, min_buy_score=10)
 
