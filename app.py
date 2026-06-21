@@ -647,6 +647,53 @@ def main():
                     key="dl_dragon_sidebar",
                 )
 
+                # === 紧凑回测 ===
+                with st.expander("🧪 快速回测验证", expanded=False):
+                    from backtest_engine import BUILTIN_STRATEGIES, run_backtest
+                    from technical_indicators import add_indicators_streamlined
+
+                    col_sb1, col_sb2 = st.columns(2)
+                    with col_sb1:
+                        bt_strat_sb = st.selectbox("策略", list(BUILTIN_STRATEGIES.keys()),
+                                                   key="bt_strat_sidebar")
+                    with col_sb2:
+                        top_n_sb = st.selectbox("回测前N只", [3, 5, 8, 10, 15],
+                                                index=1, key="bt_topn_sidebar")
+
+                    if st.button("⚡ 快速回测", use_container_width=True, key="bt_run_sidebar"):
+                        top_codes = scan_df.head(top_n_sb)['code'].tolist()
+                        bt_sb_results = []
+                        prog = st.progress(0)
+                        for i, code in enumerate(top_codes):
+                            try:
+                                kdf = cached_get_kline(code, days=250)
+                                if not kdf.empty and len(kdf) >= 60:
+                                    kdf = add_indicators_streamlined(kdf.copy())
+                                    r = run_backtest(kdf, bt_strat_sb, 100000)
+                                    row = scan_df[scan_df['code'] == code].iloc[0]
+                                    r['code'] = code
+                                    r['name'] = row['name']
+                                    r['sector'] = row['sector']
+                                    r['buy_score'] = row['buy_score']
+                                    bt_sb_results.append(r)
+                            except Exception:
+                                pass
+                            prog.progress((i + 1) / len(top_codes))
+
+                        if bt_sb_results:
+                            st.success(f"回测完成 {len(bt_sb_results)} 只")
+                            bt_tbl = []
+                            for r in sorted(bt_sb_results, key=lambda x: x.get('total_return', -999), reverse=True):
+                                bt_tbl.append({
+                                    '代码': r['code'], '名称': r['name'],
+                                    '收益%': r.get('total_return', 0),
+                                    '胜率%': r.get('win_rate', 0),
+                                    '回撤%': r.get('max_drawdown', 0),
+                                })
+                            st.dataframe(pd.DataFrame(bt_tbl), use_container_width=True, height=250)
+                        else:
+                            st.warning("回测无有效结果")
+
                 if st.button("🗑️ 关闭结果"):
                     st.session_state['dragon_scan'] = False
                     st.rerun()
@@ -1425,6 +1472,144 @@ def my_strategy(df, idx, params):
                     for k in ['scan_df', 'buy_df', 'scan_time']:
                         st.session_state.pop(k, None)
                     st.rerun()
+
+            # ==== 🧪 策略回测验证 ====
+            st.divider()
+            with st.expander("🧪 一键擒龙策略回测验证", expanded=False):
+                st.markdown("对扫描出的推荐股票，选用不同策略进行历史回测，验证信号质量。")
+
+                from backtest_engine import BUILTIN_STRATEGIES, BacktestEngine, run_backtest
+                from technical_indicators import add_indicators_streamlined
+
+                strat_names = list(BUILTIN_STRATEGIES.keys())
+                col_bt1, col_bt2, col_bt3 = st.columns(3)
+                with col_bt1:
+                    bt_strategy = st.selectbox("回测策略", strat_names, index=0, key="bt_strategy_tab7")
+                with col_bt2:
+                    top_n = st.slider("回测前N只推荐股", 1, min(20, len(scan_df)), min(8, len(scan_df)), 1, key="bt_topn_tab7")
+                with col_bt3:
+                    bt_capital = st.number_input("初始资金(万)", 1, 1000, 10, 1, key="bt_capital_tab7")
+
+                top_codes = scan_df.head(top_n)['code'].tolist()
+                bt_selected = st.multiselect(
+                    f"选择回测股票（默认前{top_n}只）",
+                    options=scan_df['code'].tolist(),
+                    default=top_codes,
+                    format_func=lambda c: f"{c} {scan_df[scan_df['code']==c]['name'].iloc[0]}",
+                    key="bt_stocks_tab7"
+                )
+
+                if st.button("🚀 开始批量回测", type="primary", use_container_width=True, key="bt_run_tab7"):
+                    if not bt_selected:
+                        st.warning("请选择至少一只股票")
+                    else:
+                        bt_results = []
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        total = len(bt_selected)
+
+                        for i, code in enumerate(bt_selected):
+                            status_text.text(f"回测中: {code} ({i+1}/{total})")
+                            try:
+                                kdf = cached_get_kline(code, days=250)
+                                if kdf.empty or len(kdf) < 60:
+                                    bt_results.append({'code': code, 'name': '数据不足', 'error': 'K线数据不足'})
+                                else:
+                                    kdf = add_indicators_streamlined(kdf.copy())
+                                    result = run_backtest(kdf, bt_strategy, bt_capital * 10000)
+                                    row_info = scan_df[scan_df['code'] == code].iloc[0]
+                                    result['code'] = code
+                                    result['name'] = row_info['name']
+                                    result['sector'] = row_info['sector']
+                                    result['buy_score'] = row_info['buy_score']
+                                    result['signal'] = row_info['signal']
+                                    bt_results.append(result)
+                            except Exception as e:
+                                bt_results.append({'code': code, 'name': '异常', 'error': str(e)[:50]})
+                            progress_bar.progress((i + 1) / total)
+
+                        progress_bar.progress(1.0)
+                        status_text.text(f"回测完成! 共 {len(bt_results)} 只")
+                        st.session_state['bt_results'] = bt_results
+                        st.session_state['bt_strategy_name'] = bt_strategy
+
+                if 'bt_results' in st.session_state and st.session_state['bt_results']:
+                    bt_results = st.session_state['bt_results']
+                    bt_name = st.session_state.get('bt_strategy_name', '')
+                    st.markdown(f"**策略**: {bt_name} | 回测 {len(bt_results)} 只")
+
+                    # Summary cards
+                    valid = [r for r in bt_results if 'total_return' in r]
+                    if valid:
+                        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                        avg_ret = np.mean([r['total_return'] for r in valid])
+                        mc1.metric("📈 平均收益", f"{avg_ret:+.1f}%")
+                        avg_wr = np.mean([r.get('win_rate', 0) for r in valid])
+                        mc2.metric("🎯 平均胜率", f"{avg_wr:.1f}%")
+                        avg_dd = np.mean([r.get('max_drawdown', 0) for r in valid])
+                        mc3.metric("📉 平均回撤", f"{avg_dd:.1f}%")
+                        win_count = sum(1 for r in valid if r.get('total_return', 0) > 0)
+                        mc4.metric("🏆 盈利数", f"{win_count}/{len(valid)}")
+                        best = max(valid, key=lambda r: r.get('total_return', -999))
+                        mc5.metric("⭐ 最佳", f"{best.get('name','')} ({best.get('total_return',0):+.1f}%)")
+
+                    # Results table
+                    bt_display = []
+                    for r in bt_results:
+                        bt_display.append({
+                            '代码': r.get('code', ''),
+                            '名称': r.get('name', ''),
+                            '板块': r.get('sector', ''),
+                            'AI评分': r.get('buy_score', ''),
+                            '总收益%': r.get('total_return', '-'),
+                            '年化%': r.get('annual_return', '-'),
+                            '最大回撤%': r.get('max_drawdown', '-'),
+                            '胜率%': r.get('win_rate', '-'),
+                            '夏普': r.get('sharpe_ratio', '-'),
+                            '交易次数': r.get('trades_count', '-'),
+                            '错误': r.get('error', ''),
+                        })
+                    bt_df_display = pd.DataFrame(bt_display)
+
+                    def color_ret(val):
+                        if isinstance(val, str): return ''
+                        return 'background-color: #c8e6c9' if val > 0 else 'background-color: #ffcdd2'
+                    def color_wr(val):
+                        if isinstance(val, str): return ''
+                        return 'background-color: #c8e6c9' if val > 50 else ''
+
+                    st.dataframe(
+                        bt_df_display.style.applymap(color_ret, subset=['总收益%', '年化%'])
+                                     .applymap(color_wr, subset=['胜率%'])
+                                     .format({'年化%': '{:+.1f}%', '总收益%': '{:+.1f}%',
+                                              '最大回撤%': '{:.1f}%', '胜率%': '{:.1f}%',
+                                              '夏普': '{:.3f}'}, na_rep='-'),
+                        use_container_width=True, height=400
+                    )
+
+                    # Equity curve for best performer
+                    if valid:
+                        best_r = max(valid, key=lambda r: r.get('total_return', -999))
+                        eq_df = best_r.get('equity_curve')
+                        if eq_df is not None and not eq_df.empty:
+                            st.subheader(f"📊 {best_r.get('name','')} 权益曲线")
+                            fig_eq = go.Figure()
+                            fig_eq.add_trace(go.Scatter(
+                                x=eq_df['date'], y=eq_df['equity'],
+                                name='权益曲线', fill='tozeroy',
+                                fillcolor='rgba(30,144,255,0.1)',
+                                line=dict(color='#1f77b4'),
+                            ))
+                            fig_eq.add_hline(y=bt_capital * 10000, line_dash="dash",
+                                             line_color="gray", annotation_text="初始资金")
+                            fig_eq.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0))
+                            st.plotly_chart(fig_eq, use_container_width=True)
+
+                    # Export
+                    csv_bt = bt_df_display.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button("⬇️ 导出回测报告", csv_bt,
+                                       f"回测_{bt_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                       "text/csv", key="dl_bt_tab7")
         else:
             st.info("👆 点击上方 **开始扫描** 按钮，AI将自动分析全市场股票。")
             st.markdown("""
