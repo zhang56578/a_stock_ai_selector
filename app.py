@@ -39,6 +39,11 @@ from stock_scanner import (
     STOCK_POOLS, scan_pool, scan_all_pools,
     filter_buy_signals, summarize_by_sector,
 )
+from watchlist import (
+    load_watchlist, add_to_watchlist, remove_from_watchlist,
+    is_in_watchlist, get_watchlist_pool, get_watchlist_count,
+    get_watchlist_df, clear_watchlist,
+)
 
 # ==================== 页面配置 ====================
 st.set_page_config(
@@ -132,11 +137,12 @@ SIGNAL_CN = {
 # 列名中英文映射（扫描结果表）
 COL_CN = {
     'code': '代码', 'name': '名称', 'sector': '板块', 'price': '现价',
-    'change%': '涨跌%', 'signal': '信号', 'buy_score': '买入分',
+    'change%': '当日涨跌', 'signal': '信号', 'buy_score': '买入分',
     'sell_score': '卖出分', 'rsi': 'RSI',
     'buy_strategy': '🟢买入策略', 'sell_strategy': '🔴卖出策略',
+    'buy_reasons': '买入原因', 'sell_reasons': '卖出原因',
     'ret_20d': '20日涨跌', 'ret_60d': '60日涨跌',
-    'macd_cross_wr': 'MACD金叉胜率', 'buy_reasons': '买入原因',
+    'macd_cross_wr': 'MACD金叉胜率',
 }
 
 def _label_reasons(reasons_str: str) -> str:
@@ -474,7 +480,7 @@ def main():
 
         dragon_pool = st.selectbox(
             "扫描范围",
-            options=["全部板块"] + list(STOCK_POOLS.keys()),
+            options=["全部板块"] + ["⭐ 我的关注"] + list(STOCK_POOLS.keys()),
             index=0,
             key="dragon_pool_sidebar",
         )
@@ -488,6 +494,26 @@ def main():
             st.session_state['dragon_pool'] = dragon_pool
             st.session_state['dragon_days'] = dragon_days
             st.session_state['dragon_workers'] = dragon_workers
+
+        # 关注列表入口
+        wl_count = get_watchlist_count()
+        st.caption(f"📋 已关注: {wl_count} 只")
+        with st.expander("📋 管理关注列表"):
+            if wl_count == 0:
+                st.caption("暂无关注股票。扫描后点击「⭐ 加入关注」添加")
+            else:
+                wl_df = get_watchlist_df()
+                for _, row in wl_df.iterrows():
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        st.write(f"{row['code']} {row.get('name','')} [{row.get('sector','')}]")
+                    with c2:
+                        if st.button("🗑️", key=f"wl_del_{row['code']}"):
+                            remove_from_watchlist(row['code'])
+                            st.rerun()
+                if st.button("🗑️ 清空全部关注"):
+                    clear_watchlist()
+                    st.rerun()
 
     # ==================== 🤖 侧边栏：实时刷新 ====================
     with st.sidebar:
@@ -567,6 +593,11 @@ def main():
                 for sector, stocks in STOCK_POOLS.items():
                     for code, name in stocks:
                         all_stocks.append((code, name, sector))
+                for s in load_watchlist():
+                    all_stocks.append((s['code'], s.get('name',''), s.get('sector','用户关注')))
+            elif dragon_pool_name == "⭐ 我的关注":
+                for s in load_watchlist():
+                    all_stocks.append((s['code'], s.get('name',''), s.get('sector','用户关注')))
             else:
                 for code, name in STOCK_POOLS.get(dragon_pool_name, []):
                     all_stocks.append((code, name, dragon_pool_name))
@@ -657,10 +688,11 @@ def main():
                 display_df = display_df.sort_values('buy_score', ascending=False)
 
                 show_cols = ['code', 'name', 'sector', 'price', 'change%',
-                              'signal', 'buy_score', 'sell_score', 'rsi',
+                              'rsi',
+                              'signal', 'buy_score', 'sell_score',
                               'buy_strategy', 'sell_strategy',
-                              'ret_20d', 'ret_60d', 'macd_cross_wr',
-                              'buy_reasons']
+                              'buy_reasons', 'sell_reasons',
+                              'ret_20d', 'ret_60d', 'macd_cross_wr']
                 avail = [c for c in show_cols if c in display_df.columns]
 
                 # 翻译信号和列名
@@ -793,8 +825,8 @@ def main():
 
     # ==================== 主Tab ====================
     tabs = st.tabs([
-        "🔥 热点扫描",
         "📊 技术分析",
+        "🔥 热点扫描",
         "💼 持仓优化",
         "📉 行情复盘",
         "🔬 价值研报",
@@ -805,7 +837,7 @@ def main():
     ])
 
     # ==================== TAB 1: 热点扫描 ====================
-    with tabs[0]:
+    with tabs[1]:
         st.header("当前市场热点 & 板块轮动")
 
         col1, col2 = st.columns([3, 2])
@@ -883,8 +915,8 @@ def main():
             if st.button("美股共振板块", use_container_width=True):
                 st.info("美股半导体普涨 → A股半导体/存储/设备板块大概率高开")
 
-    # ==================== TAB 2: 技术分析 ====================
-    with tabs[1]:
+    # ==================== TAB 0: 技术分析（默认首页） ====================
+    with tabs[0]:
         st.header(f"📊 {selected_code} {stock_info['name']} — 技术全景分析")
 
         # K线主图
@@ -1468,10 +1500,11 @@ def my_strategy(df, idx, params):
 
             # Format for display
             show_cols = ['code', 'name', 'sector', 'price', 'change%',
-                         'signal', 'buy_score', 'sell_score', 'rsi',
+                         'rsi',
+                         'signal', 'buy_score', 'sell_score',
                          'buy_strategy', 'sell_strategy',
-                         'ret_20d', 'ret_60d', 'macd_cross_wr',
-                         'buy_reasons']
+                         'buy_reasons', 'sell_reasons',
+                         'ret_20d', 'ret_60d', 'macd_cross_wr']
 
             available_cols = [c for c in show_cols if c in display_df.columns]
 
@@ -1558,18 +1591,27 @@ def my_strategy(df, idx, params):
 
             # Export
             st.divider()
-            export_col1, export_col2 = st.columns(2)
+            export_col1, export_col2, export_col3 = st.columns(3)
             with export_col1:
                 csv = display_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     "⬇️ 导出CSV", csv,
                     f"一键擒龙_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                     "text/csv", use_container_width=True,
-                    key="dl_dragon_tab",
                 )
             with export_col2:
+                if st.button("⭐ 全部买入信号加入关注", use_container_width=True):
+                    added = 0
+                    bdf = display_df[display_df['signal'].isin(['STRONG_BUY','BUY','WEAK_BUY'])] if 'signal' in display_df.columns else display_df
+                    for _, r in bdf.iterrows():
+                        add_to_watchlist(str(r['code']), str(r['name']), str(r.get('sector','')),
+                                        float(r.get('price', 0)))
+                        added += 1
+                    st.success(f"已添加 {added} 只")
+                    st.rerun()
+            with export_col3:
                 if st.button("🔄 清空结果重新扫描", use_container_width=True):
-                    for k in ['scan_df', 'buy_df', 'scan_time']:
+                    for k in ['dragon_scan', 'scan_df', 'buy_df', 'scan_time']:
                         st.session_state.pop(k, None)
                     st.rerun()
 

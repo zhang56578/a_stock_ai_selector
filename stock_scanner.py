@@ -159,6 +159,18 @@ def _scan_single_stock(code: str, name: str, sector: str, days: int = 90,
 
         latest = df.iloc[-1]
 
+        # 优先使用腾讯实时行情覆盖日K线的昨日数据
+        realtime_price = fund.get('最新价', 0)
+        realtime_change = fund.get('涨跌幅', None)
+        if realtime_price and realtime_price > 0:
+            display_price = round(float(realtime_price), 2)
+        else:
+            display_price = round(latest['close'], 2)
+        if realtime_change is not None and realtime_change != 0:
+            display_change = round(float(realtime_change), 2)
+        else:
+            display_change = round(latest.get('Change', 0), 2)
+
         # === 信号质量回测：基于实际K线，而非策略模拟 ===
         # 20日/60日涨幅（买入持有基准）
         if len(df) >= 20:
@@ -205,8 +217,8 @@ def _scan_single_stock(code: str, name: str, sector: str, days: int = 90,
             'code': code,
             'name': name,
             'sector': sector,
-            'price': round(latest['close'], 2),
-            'change%': round(latest.get('Change', 0), 2),
+            'price': display_price,
+            'change%': display_change,
             'signal': signals['overall'],
             'buy_score': signals['buy_score'],
             'sell_score': signals['sell_score'],
