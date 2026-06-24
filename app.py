@@ -36,7 +36,7 @@ from backtest_engine import (
     run_backtest, compare_strategies,
 )
 from stock_scanner import (
-    STOCK_POOLS, scan_pool, scan_all_pools,
+    STOCK_POOLS, scan_pool, scan_all_pools, scan_stocks,
     filter_buy_signals, summarize_by_sector,
 )
 from watchlist import (
@@ -490,10 +490,34 @@ def main():
                                    help="科创板需要50万门槛，无权限者建议勾选")
 
         if st.button("🚀 开始擒龙扫描", type="primary", use_container_width=True, key="dragon_scan_sidebar"):
-            st.session_state['dragon_scan'] = True
-            st.session_state['dragon_pool'] = dragon_pool
-            st.session_state['dragon_days'] = dragon_days
-            st.session_state['dragon_workers'] = dragon_workers
+            with st.spinner("⏳ 扫描中..."):
+                all_stocks = []
+                if dragon_pool == "全部板块":
+                    for sector, stocks in STOCK_POOLS.items():
+                        for code, name in stocks:
+                            if not (exclude_star and code.startswith('688')):
+                                all_stocks.append((code, name, sector))
+                    for s in load_watchlist():
+                        all_stocks.append((s['code'], s.get('name',''), s.get('sector','用户关注')))
+                elif dragon_pool == "⭐ 我的关注":
+                    for s in load_watchlist():
+                        all_stocks.append((s['code'], s.get('name',''), s.get('sector','用户关注')))
+                else:
+                    for code, name in STOCK_POOLS.get(dragon_pool, []):
+                        if not (exclude_star and code.startswith('688')):
+                            all_stocks.append((code, name, dragon_pool))
+
+                scan_df = scan_stocks(all_stocks, days=dragon_days, max_workers=dragon_workers)
+                if not scan_df.empty:
+                    buy_df = filter_buy_signals(scan_df, min_buy_score=10)
+                    st.session_state['scan_df'] = scan_df
+                    st.session_state['buy_df'] = buy_df
+                    st.session_state['scan_time'] = datetime.now().strftime('%H:%M:%S')
+                    st.success(f"✅ 扫描完成: {len(buy_df)}只买入 / {len(scan_df)}只全部")
+                    st.caption(f"最强: {scan_df.groupby('sector')['buy_score'].mean().idxmax() if not scan_df.empty else '-'}")
+                    st.caption("👉 到「🐉 一键擒龙」Tab查看详情")
+                else:
+                    st.warning("扫描无结果")
 
         # 关注列表入口
         wl_count = get_watchlist_count()
@@ -1590,6 +1614,35 @@ def my_strategy(df, idx, params):
                     st.info("没有符合筛选条件的股票")
 
             # Export
+            st.divider()
+
+            # Per-stock watchlist checkboxes
+            st.subheader("⭐ 逐只加入关注")
+            st.caption("勾选股票后点击下方按钮批量加入关注列表")
+            watch_candidates = display_df.copy()
+            wl_cols = st.columns(4)
+            stock_groups = []
+            for i, (_, row) in enumerate(watch_candidates.iterrows()):
+                group_idx = i % 4
+                with wl_cols[group_idx]:
+                    label = f"{row['code']} {row['name']}"
+                    checked = is_in_watchlist(str(row['code']))
+                    tick = st.checkbox(
+                        f"{'✅' if checked else '⬜'} {label}",
+                        value=checked,
+                        key=f"wl_chk_{row['code']}",
+                    )
+                    if tick and not checked:
+                        stock_groups.append(row)
+
+            if stock_groups:
+                if st.button(f"⭐ 加入勾选的 {len(stock_groups)} 只股票", use_container_width=True):
+                    for r in stock_groups:
+                        add_to_watchlist(str(r['code']), str(r['name']),
+                                        str(r.get('sector', '')), float(r.get('price', 0)))
+                    st.success(f"已添加 {len(stock_groups)} 只")
+                    st.rerun()
+
             st.divider()
             export_col1, export_col2, export_col3 = st.columns(3)
             with export_col1:
