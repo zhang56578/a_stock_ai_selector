@@ -1363,6 +1363,81 @@ def my_strategy(df, idx, params):
     with tabs[6]:
         st.header("🐉 一键擒龙 — 全市场智能扫描")
 
+        # 优先显示侧边栏扫描的缓存结果
+        cached = st.session_state.get('scan_df')
+        if cached is not None and not cached.empty:
+            scan_time = st.session_state.get('scan_time', '')
+            st.success(f"✅ 上次扫描结果 ({scan_time}) | 共 {len(cached)} 只，买入信号 {len(st.session_state.get('buy_df', cached))} 只")
+            if st.button("🔄 重新扫描", key="tab_rescan"):
+                for k in ['scan_df', 'buy_df', 'scan_time']:
+                    st.session_state.pop(k, None)
+                st.rerun()
+            st.markdown("---")
+
+        cached = st.session_state.get('scan_df')
+        if cached is not None and not cached.empty:
+            scan_df = cached
+            buy_df = st.session_state.get('buy_df', pd.DataFrame())
+            display_df = buy_df.copy() if not buy_df.empty else scan_df.copy()
+            display_df = display_df.sort_values('buy_score', ascending=False)
+
+            # Summary metrics
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("强烈买入", len(scan_df[scan_df['signal']=='STRONG_BUY']) if 'signal' in scan_df.columns else 0)
+            m2.metric("买入", len(scan_df[scan_df['signal']=='BUY']) if 'signal' in scan_df.columns else 0)
+            m3.metric("偏多", len(scan_df[scan_df['signal']=='WEAK_BUY']) if 'signal' in scan_df.columns else 0)
+            if not scan_df.empty:
+                m4.metric("最强板块", scan_df.groupby('sector')['buy_score'].mean().idxmax())
+            else:
+                m4.metric("最强板块", "-")
+
+            # Sector summary
+            sector_summ = summarize_by_sector(scan_df)
+            if not sector_summ.empty:
+                with st.expander("📊 行业扫描汇总", expanded=False):
+                    st.dataframe(sector_summ.style.background_gradient(subset=['买入信号数','平均买入分'], cmap='RdYlGn'), use_container_width=True)
+
+            # Detail table
+            st.subheader("🔍 扫描结果清单")
+            display_renamed = display_df.copy()
+            if 'signal' in display_renamed.columns:
+                SIGNAL_CN = {'STRONG_BUY':'🟢强烈买入','BUY':'🔵买入','WEAK_BUY':'⚪偏多','NEUTRAL':'⬜中性','WEAK_SELL':'🟡偏空','SELL':'🟠卖出','STRONG_SELL':'🔴强烈卖出'}
+                display_renamed['signal'] = display_renamed['signal'].map(SIGNAL_CN).fillna(display_renamed['signal'])
+            if 'buy_reasons' in display_renamed.columns:
+                display_renamed['buy_reasons'] = display_renamed['buy_reasons'].apply(_label_reasons)
+            if 'sell_reasons' in display_renamed.columns:
+                display_renamed['sell_reasons'] = display_renamed['sell_reasons'].apply(_label_reasons)
+            display_renamed.rename(columns=COL_CN, inplace=True)
+
+            avail = [c for c in COL_CN.values() if c in display_renamed.columns]
+            st.dataframe(display_renamed[avail], use_container_width=True, height=450)
+
+            # Per-stock watchlist
+            with st.expander("⭐ 逐只加入关注", expanded=False):
+                wl_cols = st.columns(4)
+                stock_groups = []
+                for i, (_, row) in enumerate(display_df.iterrows()):
+                    with wl_cols[i % 4]:
+                        checked = is_in_watchlist(str(row['code']))
+                        tick = st.checkbox(f"{'✅' if checked else '⬜'} {row['code']} {row['name']}", value=checked, key=f"tab_wl_{row['code']}")
+                        if tick and not checked:
+                            stock_groups.append(row)
+                if stock_groups:
+                    if st.button(f"⭐ 加入勾选的 {len(stock_groups)} 只", key="tab_wl_add"):
+                        for r in stock_groups:
+                            add_to_watchlist(str(r['code']), str(r['name']), str(r.get('sector','')), float(r.get('price',0)))
+                        st.success(f"已添加 {len(stock_groups)} 只")
+                        st.rerun()
+
+            # Export
+            csv_data = display_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("⬇️ 导出CSV", csv_data, f"一键擒龙_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
+
+        else:
+            st.info("👆 尚未扫描。在侧边栏底部或下方点击 **🚀 开始扫描**")
+
+        st.markdown("---")
+
         st.markdown("""
         一键扫描A股全市场或指定板块，AI自动分析每只股票的技术面，筛选出**具有买入信号的股票**，
         按得分排序，帮你快速锁定值得关注的标的。
