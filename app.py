@@ -1414,18 +1414,21 @@ def my_strategy(df, idx, params):
             with st.expander("⭐ 逐只加入关注", expanded=False):
                 wl_cols = st.columns(4)
                 stock_groups = []
-                for i, (_, row) in enumerate(display_df.iterrows()):
+                unique_df = display_df.drop_duplicates(subset=['code'])
+                for i, (_, row) in enumerate(unique_df.iterrows()):
                     with wl_cols[i % 4]:
                         checked = is_in_watchlist(str(row['code']))
                         tick = st.checkbox(f"{'✅' if checked else '⬜'} {row['code']} {row['name']}", value=checked, key=f"tab_wl_{row['code']}")
                         if tick and not checked:
                             stock_groups.append(row)
-                if stock_groups:
-                    if st.button(f"⭐ 加入勾选的 {len(stock_groups)} 只", key="tab_wl_add"):
-                        for r in stock_groups:
-                            add_to_watchlist(str(r['code']), str(r['name']), str(r.get('sector','')), float(r.get('price',0)))
-                        st.success(f"已添加 {len(stock_groups)} 只")
-                        st.rerun()
+
+            # 非expander内的独立按钮（避免expander收起后按钮消失）
+            if stock_groups:
+                if st.button(f"⭐ 加入勾选的 {len(stock_groups)} 只", key="tab_wl_add"):
+                    for r in stock_groups:
+                        add_to_watchlist(str(r['code']), str(r['name']), str(r.get('sector','')), float(r.get('price',0)))
+                    st.success(f"已添加 {len(stock_groups)} 只")
+                    st.rerun()
 
             # Export
             csv_data = display_df.to_csv(index=False).encode('utf-8-sig')
@@ -1692,7 +1695,7 @@ def my_strategy(df, idx, params):
             # Per-stock watchlist checkboxes
             st.subheader("⭐ 逐只加入关注")
             st.caption("勾选股票后点击下方按钮批量加入关注列表")
-            watch_candidates = display_df.copy()
+            watch_candidates = display_df.drop_duplicates(subset=['code'])
             wl_cols = st.columns(4)
             stock_groups = []
             for i, (_, row) in enumerate(watch_candidates.iterrows()):
