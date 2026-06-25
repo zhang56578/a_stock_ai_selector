@@ -1400,7 +1400,6 @@ def my_strategy(df, idx, params):
             st.subheader("🔍 扫描结果清单")
             display_renamed = display_df.copy()
             if 'signal' in display_renamed.columns:
-                SIGNAL_CN = {'STRONG_BUY':'🟢强烈买入','BUY':'🔵买入','WEAK_BUY':'⚪偏多','NEUTRAL':'⬜中性','WEAK_SELL':'🟡偏空','SELL':'🟠卖出','STRONG_SELL':'🔴强烈卖出'}
                 display_renamed['signal'] = display_renamed['signal'].map(SIGNAL_CN).fillna(display_renamed['signal'])
             if 'buy_reasons' in display_renamed.columns:
                 display_renamed['buy_reasons'] = display_renamed['buy_reasons'].apply(_label_reasons)
