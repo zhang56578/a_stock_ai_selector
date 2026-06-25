@@ -777,7 +777,6 @@ def main():
 
                 # === 紧凑回测 ===
                 with st.expander("🧪 快速回测验证", expanded=False):
-                    from backtest_engine import BUILTIN_STRATEGIES, run_backtest
                     from technical_indicators import add_indicators_streamlined
 
                     col_sb1, col_sb2 = st.columns(2)
@@ -1748,7 +1747,6 @@ def my_strategy(df, idx, params):
             with st.expander("🧪 一键擒龙策略回测验证", expanded=False):
                 st.markdown("对扫描出的推荐股票，选用不同策略进行历史回测，验证信号质量。")
 
-                from backtest_engine import BUILTIN_STRATEGIES, BacktestEngine, run_backtest
                 from technical_indicators import add_indicators_streamlined
 
                 # 策略白话说明
